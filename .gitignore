@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Xcode — per-user state, never shared
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+
+# Build output
+build/
+DerivedData/
+*.moved-aside
+
+# Packaged builds — published as GitHub Releases, not committed
+*.dmg
+*.app
