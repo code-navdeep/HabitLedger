@@ -311,7 +311,7 @@ struct HabitProgressView: View {
             Circle().fill(Color.green)
         case .failure:
             Circle().fill(Color.red.opacity(0.55))
-        case .silentSuccess:
+        case .silentSuccess, .pending:
             Circle().strokeBorder(Color.theme.textTertiary, lineWidth: 1.5)
         case .skipped:
             Circle().fill(Color.primary.opacity(0.05))
@@ -433,7 +433,7 @@ struct HabitProgressView: View {
             return .green
         case .failure:
             return .red
-        case .skipped:
+        case .skipped, .pending:
             return Color.theme.textTertiary
         }
     }

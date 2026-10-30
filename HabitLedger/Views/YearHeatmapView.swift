@@ -44,7 +44,7 @@ struct YearHeatmapView: View {
             return .green
         case .failure:
             return Color.red.opacity(0.6)
-        case .silentSuccess:
+        case .silentSuccess, .pending:
             return Color.primary.opacity(0.12)
         case .skipped:
             return Color.primary.opacity(0.04)

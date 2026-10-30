@@ -21,6 +21,10 @@ enum DayResult {
     /// The day doesn't participate: it is in the future, before the habit's
     /// start date, or not scheduled. Skipped days neither break nor extend streaks.
     case skipped
+    /// Today only, not judged until midnight: nothing logged, or a number still short
+    /// of an adopt goal. Neither counts nor breaks; at midnight it becomes the usual
+    /// verdict (Yes/No → silent success, number → failure).
+    case pending
 
     var countsAsSuccess: Bool { self == .success || self == .silentSuccess }
 }
@@ -35,6 +39,8 @@ class HabitService {
     /// - Numerical: unlogged = failure (value counts as 0). With a target:
     ///   adopt needs value >= target, quit needs value <= target. Without one:
     ///   adopt needs value > 0, quit needs value == 0.
+    /// - Today: an unlogged day, or a number short of an adopt goal, is `.pending`
+    ///   until midnight; the rules above apply once the day is over.
     func dayResult(for habit: Habit, on date: Date) -> DayResult {
         evaluate(habit: habit, on: Calendar.current.startOfDay(for: date), entry: habit.getEntry(for: date))
     }
@@ -51,19 +57,24 @@ class HabitService {
               day >= calendar.startOfDay(for: habit.createdDate),
               habit.isScheduled(on: day) else { return .skipped }
 
+        // Every caller passes a start-of-day date.
+        let isToday = day == today
+
         switch habit.type {
         case .binary:
-            guard let didIt = entry?.value.boolValue else { return .silentSuccess }
+            guard let didIt = entry?.value.boolValue else { return isToday ? .pending : .silentSuccess }
             let success = habit.goal == .adopt ? didIt : !didIt
             return success ? .success : .failure
         case .numerical:
-            guard let value = entry?.value.numericalValue else { return .failure }
+            guard let value = entry?.value.numericalValue else { return isToday ? .pending : .failure }
             let success: Bool
             if let target = habit.target {
                 success = habit.goal == .adopt ? value >= target : value <= target
             } else {
                 success = habit.goal == .adopt ? value > 0 : value == 0
             }
+            // A value short of an adopt goal counts as not logged until the day ends.
+            if !success && isToday && habit.goal == .adopt { return .pending }
             return success ? .success : .failure
         }
     }
@@ -83,8 +94,9 @@ class HabitService {
         let createdDay = calendar.startOfDay(for: habit.createdDate)
         let entries = entryMap(for: habit)
 
-        // A numerical habit that hasn't met its goal *yet today* starts counting
-        // from yesterday instead, so an in-progress day doesn't break the streak.
+        // A numerical habit whose logged value already fails today (a quit habit over
+        // its limit) starts counting from yesterday, so today doesn't break the streak
+        // until it's over. Unlogged or short days are `.pending` and skipped below.
         var startOffset = 0
         if habit.type == .numerical,
            evaluate(habit: habit, on: today, entry: entries[today]) == .failure {
@@ -98,7 +110,7 @@ class HabitService {
             if day < createdDay { break }
             switch evaluate(habit: habit, on: day, entry: entries[day]) {
             case .success, .silentSuccess: current += 1
-            case .skipped: continue
+            case .skipped, .pending: continue
             case .failure: break currentLoop
             }
         }
@@ -111,7 +123,7 @@ class HabitService {
             if day < createdDay { break }
             switch evaluate(habit: habit, on: day, entry: entries[day]) {
             case .success, .silentSuccess: running += 1
-            case .skipped: continue
+            case .skipped, .pending: continue
             case .failure:
                 longest = max(longest, running)
                 running = 0
@@ -217,8 +229,11 @@ class HabitService {
         for date in dateRange {
             let day = calendar.startOfDay(for: date)
             guard day >= createdDay, habit.isScheduled(on: day) else { continue }
+            let result = evaluate(habit: habit, on: day, entry: entries[day])
+            // An unjudged today stays out of both the rate and the average until midnight.
+            if result == .pending { continue }
             countedDays += 1
-            if evaluate(habit: habit, on: day, entry: entries[day]).countsAsSuccess {
+            if result.countsAsSuccess {
                 successfulDays += 1
             }
             totalValue += entries[day]?.value.numericalValue ?? 0
